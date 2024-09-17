@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 import com.mojang.datafixers.util.Pair;
 import com.samsthenerd.hexgloop.blockentities.BERConjuredRedstone;
 import com.samsthenerd.hexgloop.blockentities.BERHexChest;
+import com.samsthenerd.hexgloop.blockentities.BlockEntityDial;
 import com.samsthenerd.hexgloop.blockentities.BlockEntityGloopEnergizer;
 import com.samsthenerd.hexgloop.blockentities.BlockEntityPedestal;
 import com.samsthenerd.hexgloop.blockentities.HexGloopBEs;
@@ -25,6 +26,7 @@ import com.samsthenerd.hexgloop.items.ItemHexTool;
 import com.samsthenerd.hexgloop.items.ItemLibraryCard;
 import com.samsthenerd.hexgloop.items.ItemSlateLoader;
 import com.samsthenerd.hexgloop.keybinds.HexGloopKeybinds;
+import com.samsthenerd.hexgloop.misc.StaffColorLoader;
 import com.samsthenerd.hexgloop.misc.clientgreatbook.GreatBook;
 import com.samsthenerd.hexgloop.network.HexGloopNetwork;
 import com.samsthenerd.hexgloop.network.ServerSideCheckClient;
@@ -62,6 +64,7 @@ import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.passive.FrogVariant;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.FilledMapItem;
 import net.minecraft.item.ItemConvertible;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -92,6 +95,7 @@ public class HexGloopClient {
         registerModelPredicates();
         registerColorProviders();
         registerScryingDisplayers();
+        StaffColorLoader.init();
         HexGloopKeybinds.registerKeybinds();
 
         ServerSideCheckClient.registerDisconnectUpdate();
@@ -123,7 +127,9 @@ public class HexGloopClient {
         BlockEntityRendererRegistry.register(HexGloopBEs.CONJURED_REDSTONE_BE.get(), BERConjuredRedstone::new);
         BlockEntityRendererRegistry.register(HexGloopBEs.SLATE_CHEST_BE.get(), BERHexChest::new);
         RenderTypeRegistry.register(RenderLayer.getTranslucent(), HexGloopBlocks.CONJURED_REDSTONE_BLOCK.get(), HexGloopBlocks.HEXXED_GLASS_BLOCK.get(),
-            HexGloopBlocks.ENLIGHTENMENT_BRIDGE_BLOCK.get(), HexGloopBlocks.ENLIGHTENMENT_GATE_BLOCK.get());
+            HexGloopBlocks.ENLIGHTENMENT_BRIDGE_BLOCK.get(), HexGloopBlocks.ENLIGHTENMENT_GATE_BLOCK.get(), HexGloopBlocks.GLOOP_BLOCK.get());
+
+        RenderTypeRegistry.register(RenderLayer.getCutout(), HexGloopBlocks.IOTIC_DIAL_BLOCK.get());
     }
 
     private static void registerColorProviders(){
@@ -202,6 +208,31 @@ public class HexGloopClient {
             }
             return 0xFF_FFFFFF;
         }, HexGloopItems.ESSENCE_STONE_ITEM);
+
+        int emptyColor = 0x382f40;
+
+        ColorHandlerRegistry.registerBlockColors((state, world, pos, tintIndex) -> {
+            if(!(world.getBlockEntity(pos) instanceof BlockEntityDial dialBE)){
+                return emptyColor;
+            }
+            ItemStack stack = dialBE.getInnerMultiFocus().copy();
+            if(stack.isEmpty()){
+                return emptyColor;
+            }
+            if(tintIndex == 0){
+                NbtCompound tag = HexGloopItems.MULTI_FOCUS_ITEM.get().readIotaTag(stack);
+                if(tag == null){
+                    return emptyColor;
+                }
+                return HexIotaTypes.getColor(tag);
+            }
+            int selIndex = tintIndex + (tintIndex >= dialBE.getSelection() ? 1 : 0);
+            NbtCompound tag = HexGloopItems.MULTI_FOCUS_ITEM.get().readSlotIotaTag(stack, selIndex);
+            if(tag == null){
+                return emptyColor;
+            }
+            return HexIotaTypes.getColor(tag);
+        }, HexGloopBlocks.IOTIC_DIAL_BLOCK);
     }
 
     public static int tintsFromColorizer(FrozenColorizer colorizer, int tintIndex, int sections){
@@ -280,6 +311,10 @@ public class HexGloopClient {
 
         ItemPropertiesRegistry.register(HexGloopItems.SLATE_LOADER_ITEM.get(), ItemSlateLoader.ACTIVATED_PRED, (stack, level, holder, holderID) -> {
             return HexGloopItems.SLATE_LOADER_ITEM.get().hasPatterns(stack) ? 1 : 0;
+        });
+
+        ItemPropertiesRegistry.register(HexGloopItems.SLATE_CANVAS_ITEM.get(), ItemSlateLoader.ACTIVATED_PRED, (stack, level, holder, holderID) -> {
+            return FilledMapItem.getMapId(stack) != null ? 1 : 0;
         });
 
         ItemPropertiesRegistry.register(HexGloopItems.INVENTORTY_ITEM.get(), ItemPackagedHex.HAS_PATTERNS_PRED, (stack, level, holder, holderID) -> {
@@ -397,5 +432,18 @@ public class HexGloopClient {
 
         ScryingLensOverlayRegistry.addDisplayer(HexGloopBlocks.PEDESTAL_BLOCK.get(), HexGloopClient::pedestalDisplay);
         ScryingLensOverlayRegistry.addDisplayer(HexGloopBlocks.MIRROR_PEDESTAL_BLOCK.get(), HexGloopClient::pedestalDisplay);
+        ScryingLensOverlayRegistry.addDisplayer(HexGloopBlocks.MIND_PEDESTAL_BLOCK.get(), HexGloopClient::pedestalDisplay);
+        
+        ScryingLensOverlayRegistry.addDisplayer(HexGloopBlocks.IOTIC_DIAL_BLOCK.get(), 
+        (lines, state, pos, observer, world, direction) -> {
+            if(world.getBlockEntity(pos) instanceof BlockEntityDial dialBE){
+                ItemStack stack = dialBE.getInnerMultiFocus();
+                if(stack.isEmpty()) return;
+                NbtCompound tag = HexGloopItems.MULTI_FOCUS_ITEM.get().readIotaTag(stack);
+                if(tag == null) return;
+                Text iotaDesc = HexIotaTypes.getDisplay(tag);
+                lines.add(new Pair<>(stack, iotaDesc));
+            }
+        });
     }
 }
